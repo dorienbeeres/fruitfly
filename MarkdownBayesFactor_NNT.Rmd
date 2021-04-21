@@ -1,0 +1,203 @@
+---
+title: "BayesFactor/NNT"
+author: "Dorien Beeres"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    highlight: tango
+    theme: united
+    toc: yes
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+---
+
+```{r setup, include=FALSE}
+#'echo = False' hides *all* code chunks below when knitted 
+#'warning = F' hides *all* warnings messages below when knitted 
+#'message = F' hides *all* messages below when knitted 
+# fig.path directory for figures
+knitr::opts_chunk$set(echo = TRUE, 
+                      warning = FALSE,  # have this TRUE during debugging! 
+                      message = TRUE)  # have this TRUE during debugging! 
+                      #fig.path = "figures/extra/")
+#options(scipen = 999, digits = 7)
+```
+
+```{r prepare R, echo = FALSE, include = FALSE}
+# clear memory and set random seed
+rm(list = ls()) # clear memory
+graphics.off()  # clear all plots
+cat("\014")     # clear console (same as Ctrl-L in console)
+```
+
+**Note: Run the Bayes factor function from Baguely and Kaye (2010)** 
+[http://www.danny-kaye.co.uk/Docs/Dienes_notes.pdf](http://www.danny-kaye.co.uk/Docs/Dienes_notes.pdf)
+ 
+
+# set up {.tabset}
+```{r}
+packages <- c('tidyverse',     # data handling
+              'here',          # keep track of path
+              'kableExtra',    # nicer tables    
+              'gapminder')    
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages], repos = c(CRAN = "https://cran.rstudio.com"))
+}
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+
+```
+
+
+# Bayes factor {.tabset}
+
+
+## Bayes Factor  {.tabset}
+```{r}
+
+## Run the Bayes factor function from Baguely and Kaye (2010)
+## http://www.danny-kaye.co.uk/Docs/Dienes_notes.pdf
+Bf<-function(sd, obtained, uniform = FALSE, lower=0, upper=1, meanoftheory=0, sdtheory=1, tails=2)
+{
+  #Version 2.0.1
+  #modifications by John Christie
+  # modification means that this does not exactly replicate Dienes.  What it does
+  # is do the right thing instead.  :)  The current version is more accurate.
+  #03/10/2011
+  #Authors Danny Kaye & Thom Baguley
+  #Version 1.0
+  #19/10/2009
+  # test data can be found starting at p100
+  # notes on how to use these functions can be found at
+  # http://danny-kaye.co.uk/Docs/Dienes_notes.pdf
+  #raised from 2000 for better accuracy - the speed of the new code allows it
+  slices <- 20000
+  if(uniform){
+    range <- upper - lower
+    dist_theta <- 1 / range
+    # incr <- range / slices
+    # theta <- seq(lower + incr, by = incr, length.out = slices+1)
+    # height <- dist_theta * dnorm(obtained, theta, sd)
+    # area <- sum(height * incr)
+    # the commented code above replicates the original result but at the
+    # limit (slices <- 5e6) it's actually equivalent to the followingâ???¦
+    area <- dist_theta * diff(pnorm(c(lower, upper), obtained, sd)) 
+  }else{
+    # the code below again doesnt' replicate the original code.
+    # incrementing in a scalar loop was causing an accumulation of tiny fp errors
+    # the lower end was incremented prior to starting (that's fixed above too)
+    zlim <- 5
+    incr <- sdtheory / (slices/(zlim*2))
+    newLower <- meanoftheory - zlim * sdtheory
+    theta <- seq(newLower, by = incr, length.out = slices+1)
+    dist_theta <- dnorm(theta, meanoftheory, sdtheory)
+    if (tails == 1){
+      dist_theta <- dist_theta[theta > 0]	* 2
+      theta <- theta[theta > 0]	
+    }
+    height <- dist_theta * dnorm(obtained, theta, sd)
+    area <- sum(height * incr)
+  }
+  LikelihoodTheory <- area
+  Likelihoodnull <- dnorm(obtained, 0, sd)
+  BayesFactor <- LikelihoodTheory / Likelihoodnull
+  return( list("LikelihoodTheory" = LikelihoodTheory, "Likelihoodnull" = Likelihoodnull, "BayesFactor" = BayesFactor) )
+}
+```
+##Alternative hypothesis {.tabset}
+```{r}
+
+#Calculation of the logodds using the pooled RR=0.86 (95% CI 0.79-0.94) the meta-analysis by Isensee at all
+#Rc is absolute risk to start smoking in the control group- Formula to go from RR to OR = OR<-RR*((1-Rc)+Rc*RR)
+#also did a recalculation using the risk to remain a non-smoker at follow up. 
+
+
+Rc<-(0.225*((100-50)/444))+(0.329*((213-118)/647))+(0.29*((117-60)/402))+(0.48*((419-106)/872))+(0.28*((467-288)/1663))
+
+Rint<- ((976-(183-78))+ (1495-(383-227))+(532-(133-80))+(980-(106-75))+(757-(179-102)))
+Rint_n<-976+1495+532+980+757
+R_prob_int<-Rint/Rint_n
+
+Rcont<-(444-(100-50))+(647-(213-118))+(402-(117-60))+(872-(419-106))+(1663-(467-288))
+Rcont_n<-443+647+402+872+1663  
+R_prob_cont<-Rcont/Rcont_n
+
+
+(RR<-R_prob_int/R_prob_cont)
+(logRR<-log(RR))
+```
+
+
+##Grade 7 (follow-up 1) {.tabset}
+```{r}
+## 1. cigarette smoking - even a few puffs - mixed effect logistic ( glm binominal logit function i similar)
+Bf(   .0174725,  .0187917     , 0, meanoftheory=0, sdtheory=logRR, tail=1) 
+#NNT
+1/.0187917
+## 2. cigarette smoking - whole cigarette - mixed effect logistic ( glm binominal logit function i similar)
+Bf( .0103333 ,   .0078742  , 0, meanoftheory=0, sdtheory=logRR, tail=1) 
+#NNT
+1/ .0078742 
+## 3 reg cigarette smoking 
+Bf(    .0075547,  .0083368   , 0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+#NNT
+1/ .0083368
+##4 snus use 
+Bf(   .010347,  .0013486    , 0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+#NNT
+1/.0013486 
+##5 reg snus use
+Bf(  .0033084 , -.0028482      , 0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+#NNT
+1/-.0028482
+## 6. ecigarette use - glm binominal
+Bf( .0153114 , .0279718      ,0, meanoftheory=0, sdtheory=logRR, tail=1) 
+1/.0279718 
+## 7. waterpipe use - glm binominal
+Bf(   .0092114 ,  .0105788          ,0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+#NNT
+1/.0105788  
+## 8. any type of tobacco use (all 4)
+Bf( .0179328,.0158554         ,0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+#NNT
+1/.0158554 
+```
+##Grade 8 - follow-up 2 {.tabset}
+```{r}
+## 1. cigarette smoking - even a few puffs - mixed effect logistic ( glm binominal logit function i similar)
+Bf(    .0244882, .0309175  , 0, meanoftheory=0, sdtheory=logRR, tail=1) 
+1/.0309175
+## 2. cigarette smoking - whole cigarette - mixed effect logistic ( glm binominal logit function i similar)
+Bf(    .0208317 , .0407012     , 0, meanoftheory=0, sdtheory=logRR, tail=1) 
+1/.0407012 
+## 3 reg cigarette smoking 
+Bf( .0128601 ,.0220027     , 0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+1/.0220027
+##4 snus use 
+Bf(   .028961 ,.0192299      , 0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+1/.0192299 
+##5 reg snus use
+Bf( .0111474  , .0135985    , 0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+1/.0135985 
+## 6. ecigarette use - glm binominal
+Bf(   .0260067,.0584784       ,0, meanoftheory=0, sdtheory=logRR, tail=1) 
+1/.0584784 
+## 7. waterpipe use - glm binominal
+Bf(  .0143865, .0252238     ,0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+1/.0252238
+## 8. any type of tobacco use (all 4)
+Bf(   .0343182, .0452977  ,0,  meanoftheory=0, sdtheory=logRR, tail=1) 
+1/.0452977
+```
+
+
+
+- `ctrl + alt + I` new r code section
+- `ctrl + shift + K` knit whole document
+- `>` for block code
